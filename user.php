@@ -113,6 +113,16 @@
             <td><a href="shop.php?q=1" class="btn btn-small btn-success"><i class="icon-pencil icon-white"></i></a></td>
             <td><a href="shop.php?q=1" class="btn btn-small btn-danger"><i class="icon-remove icon-white"></i></a></td>
           </tr>
+          <tr>
+          	<td><a href="shop.php?q=1">5</a></td>
+            <td><a href="shop.php?q=1">Cisalfa</a></td>
+            <td><a href="shop.php?q=1">Sport</a></td>
+            <td><a href="shop.php?q=1">Roma</a></td>
+            <td><a href="shop.php?q=1">Via Morenco di Moriondo, 1024</a></td>
+            <td><a href="shop.php?q=1">4</a></td>
+            <td><a href="shop.php?q=1" class="btn btn-small btn-success"><i class="icon-pencil icon-white"></i></a></td>
+            <td><a href="shop.php?q=1" class="btn btn-small btn-danger"><i class="icon-remove icon-white"></i></a></td>
+          </tr>
         </tbody>
 			</table>
       <a href="" class="btn btn-primary pull-right"><i class="icon-plus icon-white"></i>&nbsp;Aggiungi negozio</a>
