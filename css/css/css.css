@@ -1,0 +1,34 @@
+@charset "UTF-8";
+/* CSS Document */
+
+body{
+	padding-top:50px;
+	padding-bottom:40px;
+}
+
+.td-align{padding:10px;}
+.font1{font-size:14px;}
+.just{text-align:justify;}
+.spac{letter-spacing:1px;}
+.bord{
+	-webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
+}
+
+.btn-long{width:100%;}
+
+.well-cust{
+	padding:8px 0 !important; 
+	margin:0;
+}
+
+.marg{margin:0;}
+
+.span9-cust {
+  width: 698px;
+}
+
+.sub-nav{
+	top:100px;
+}
