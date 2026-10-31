@@ -2,25 +2,42 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Stompbox Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <style>
 :root{
   --bg:#121419; --panel:#1a1d24; --panel2:#222630; --line:#2e333e; --text:#e7e9ee; --muted:#98a1ad;
   --accent:#ff8a1f; --accent-ink:#1a1206; --accent2:#3ec7ff; --wire:#c9d2dc; --comp:#eef1f5; --grid:#232731;
   --ok:#52d17c; --err:#ff5d5d; --warn:#ffcc4d; --plotbg:#14171d; --plotgrid:#262b35; --volt:#ffd166;
   --t1:#3ec7ff; --t2:#ff8a1f; --t3:#52d17c; --t4:#e66cff; --t5:#ffd166; --t6:#ff5d8f;
+  color-scheme:dark;
 }
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+  --bg:#eef0f3; --panel:#ffffff; --panel2:#f4f6f9; --line:#d7dbe2; --text:#1b1f27; --muted:#5d6672;
+  --accent:#e2680a; --accent-ink:#fff; --accent2:#0a84c6; --wire:#2a313b; --comp:#11151b; --grid:#e3e6eb;
+  --plotbg:#ffffff; --plotgrid:#e6e9ee; --volt:#a86400;
+  --t1:#0a84c6; --t2:#e2680a; --t3:#1f9d4c; --t4:#a43bc4; --t5:#b08300; --t6:#d6336c; color-scheme:light } }
 :root[data-theme="light"]{
   --bg:#eef0f3; --panel:#ffffff; --panel2:#f4f6f9; --line:#d7dbe2; --text:#1b1f27; --muted:#5d6672;
   --accent:#e2680a; --accent-ink:#fff; --accent2:#0a84c6; --wire:#2a313b; --comp:#11151b; --grid:#e3e6eb;
   --plotbg:#ffffff; --plotgrid:#e6e9ee; --volt:#a86400;
-  --t1:#0a84c6; --t2:#e2680a; --t3:#1f9d4c; --t4:#a43bc4; --t5:#b08300; --t6:#d6336c;
+  --t1:#0a84c6; --t2:#e2680a; --t3:#1f9d4c; --t4:#a43bc4; --t5:#b08300; --t6:#d6336c; color-scheme:light
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--text);font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  display:grid;grid-template-rows:auto 1fr var(--bottomH,300px) 24px;overflow:hidden}
+  display:grid;grid-template-rows:auto 1fr var(--bottomH,300px) 24px;grid-template-columns:minmax(0,1fr);overflow:hidden;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+[hidden]{display:none!important}
+#modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;
+  padding:max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))}
+#modal .mbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;width:min(720px,100%);height:min(560px,100%);display:flex;flex-direction:column;gap:10px}
+#modal h3{margin:0;font-size:15px} #modal p{margin:0;color:var(--muted);font-size:12px}
+#modal textarea{flex:1;min-height:0}
+#modal .btns{display:flex;gap:8px;flex-wrap:wrap}
+#asideClose{display:none}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 button,select,input{font:inherit;color:inherit}
 button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--accent)}
@@ -42,7 +59,8 @@ header{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(-
 .ddm button{display:block;width:100%;text-align:left;border:0;background:none;padding:6px 10px}
 .ddm button:hover{background:var(--panel2)}
 /* main */
-main{display:grid;grid-template-columns:64px 1fr 290px;min-height:0}
+main{display:grid;grid-template-columns:64px minmax(0,1fr) 290px;min-height:0;min-width:0}
+header,#bottom,footer{min-width:0}
 #palette{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:4px}
 .pal{display:flex;flex-direction:column;align-items:center;gap:1px;width:100%;padding:4px 0;border-radius:6px;border:1px solid transparent;background:none;color:var(--comp)}
 .pal svg{width:40px;height:30px}
@@ -123,11 +141,36 @@ footer{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--
 footer .err{color:var(--err)} footer .ok{color:var(--ok)}
 #printArea{display:none}
 @media (max-width:900px){
-  main{grid-template-columns:56px 1fr}
+  main{grid-template-columns:56px minmax(0,1fr)}
   aside{display:none}
-  body.side aside{display:block;position:fixed;right:0;top:90px;bottom:24px;width:280px;z-index:30;box-shadow:-8px 0 30px rgba(0,0,0,.4)}
+  body.side aside{display:block;position:fixed;right:0;top:0;bottom:0;width:min(300px,86vw);z-index:60;box-shadow:-8px 0 30px rgba(0,0,0,.4);
+    padding-top:env(safe-area-inset-top, 0px);padding-bottom:env(safe-area-inset-bottom, 0px);padding-right:env(safe-area-inset-right, 0px)}
+  body.side #asideClose{display:block;margin:10px 12px 0 auto}
   .ctrl{width:170px}
   #title{width:130px}
+}
+@media (max-width:700px){
+  body{--bottomH:46%}
+  header{flex-wrap:nowrap;overflow-x:auto;gap:6px;padding:6px 0}
+  header>*{flex:none}
+  .brand{margin-right:0} .brand span{display:none}
+  #title{width:120px;flex:none}
+  main{grid-template-columns:52px minmax(0,1fr)}
+  .tabbody .plotcol{order:-1}
+  .pal svg{width:34px;height:26px}
+  #modeBadge{right:10px;white-space:normal;font-size:11px}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;padding:0}
+  .tab{padding:8px 9px}
+  .tabbody{padding:8px 0}
+  .tabbody.on{flex-direction:column;overflow-y:auto}
+  .ctrl{width:auto;flex:none;overflow:visible}
+  .ctrl .row{grid-template-columns:120px 1fr}
+  .plotcol{flex:none}
+  canvas.plot{flex:none;height:210px}
+  #spec{display:none}
+  .scroll{flex:none;overflow-x:auto}
+  #tab-net textarea{height:220px}
+  footer{padding:0}
 }
 @media print{
   body{display:block;background:#fff;color:#000;overflow:visible}
@@ -143,7 +186,7 @@ footer .err{color:var(--err)} footer .ok{color:var(--ok)}
 <header>
   <div class="brand">
     <svg viewBox="0 0 32 32"><rect x="5" y="3" width="22" height="26" rx="4" fill="var(--accent)"/><circle cx="11" cy="10" r="3" fill="var(--accent-ink)"/><circle cx="21" cy="10" r="3" fill="var(--accent-ink)"/><rect x="11" y="18" width="10" height="7" rx="2" fill="var(--accent-ink)"/></svg>
-    Stompbox Lab
+    <span>Stompbox Lab</span>
   </div>
   <input id="title" type="text" value="Circuito senza titolo" title="Nome del circuito">
   <button id="bNew" title="Nuovo circuito">Nuovo</button>
@@ -156,10 +199,11 @@ footer .err{color:var(--err)} footer .ok{color:var(--ok)}
       <button data-exp="cir">Netlist SPICE (.cir)</button>
       <button data-exp="bom">Distinta componenti (.csv)</button>
       <button data-exp="svg">Schema (.svg)</button>
-      <button data-exp="png">Schema (.png)</button>
+      <button data-exp="png" class="localonly">Schema (.png)</button>
       <button data-exp="json">Circuito (.json)</button>
-      <button data-exp="wav">Audio processato (.wav)</button>
-      <button data-exp="print">Stampa / PDF</button>
+      <button data-exp="wav" class="localonly">Audio processato (.wav)</button>
+      <button data-exp="print" class="localonly">Stampa / PDF</button>
+      <button data-exp="import">Incolla circuito (JSON)…</button>
     </div>
   </div>
   <span class="sep"></span>
@@ -192,6 +236,7 @@ footer .err{color:var(--err)} footer .ok{color:var(--ok)}
     <div id="zoomBtns"><button id="bZin" title="Zoom +">＋</button><button id="bZout" title="Zoom −">－</button><button id="bFit" title="Adatta alla vista">⤢</button></div>
   </section>
   <aside>
+    <button id="asideClose" title="Chiudi pannello">✕ Chiudi</button>
     <div class="panel"><h3>Controlli (potenziometri)</h3><div id="knobs"></div></div>
     <div class="panel"><h3 id="propTitle">Proprietà</h3><div id="props"></div></div>
   </aside>
@@ -280,6 +325,11 @@ footer .err{color:var(--err)} footer .ok{color:var(--ok)}
 </section>
 <footer id="status"><span id="stMsg">Pronto.</span><span id="stInfo"></span></footer>
 <div id="printArea"></div>
+<div id="modal" hidden><div class="mbox">
+  <h3 id="mTitle"></h3><p id="mHint"></p>
+  <textarea id="mText" spellcheck="false"></textarea>
+  <div class="btns"><button class="primary" id="mAct">Carica</button><button id="mCopy">Copia</button><button id="mDl">Scarica file</button><button id="mClose">Chiudi</button></div>
+</div></div>
 
 <script>
 'use strict';
@@ -290,6 +340,8 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const GRID = 20, VT = 0.025852, GMIN = 1e-12;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const EMBED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+const COARSE = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
 /* ---------------- valori ---------------- */
 function parseVal(s){
@@ -872,7 +924,7 @@ function compSVG(c, cls = ''){
   const [bx, by, bw, bh] = bbox(c);
   const pins = Object.keys(TYPES[c.type].pins).map(pn => {
     const [x, y] = TYPES[c.type].pins[pn];
-    return `<circle class="pindot" cx="${x * GRID}" cy="${y * GRID}" r="2.5"/><circle class="pin" data-pin="${pn}" cx="${x * GRID}" cy="${y * GRID}" r="6"/>`;
+    return `<circle class="pindot" cx="${x * GRID}" cy="${y * GRID}" r="2.5"/><circle class="pin" data-pin="${pn}" cx="${x * GRID}" cy="${y * GRID}" r="${COARSE ? 11 : 6}"/>`;
   }).join('');
   return `<g class="comp ${cls}" data-cid="${c.id}"><g transform="translate(${c.x * GRID} ${c.y * GRID}) rotate(${c.rot * 90})">
     <rect class="hit" x="${bx}" y="${by}" width="${bw}" height="${bh}"/><g class="sym">${symbol(c)}</g>${pins}</g>${labelsSVG(c)}</g>`;
@@ -964,8 +1016,13 @@ function setTool(t){
   render(); renderProps();
 }
 svg.addEventListener('contextmenu', e => e.preventDefault());
+const ptrs = new Map();
+const pdist = () => { const [a, b] = [...ptrs.values()]; return [Math.hypot(a.x - b.x, a.y - b.y), (a.x + b.x) / 2, (a.y + b.y) / 2]; };
 svg.addEventListener('pointerdown', e => {
   svg.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (ptrs.size === 2) { const [d] = pdist(); st.pinch = {d0:d, s0:st.view.s}; st.drag = null; st.pan = null; return; }
+  if (ptrs.size > 2) return;
   const raw = svgPt(e), g = snap(raw);
   st.mouse = g;
   if (e.button === 1 || e.button === 2 && st.tool === 'select' || st.space) {
@@ -1016,6 +1073,8 @@ function finishWire(didChange){
   if (didChange) changed(); else render();
 }
 svg.addEventListener('pointermove', e => {
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (st.pinch && ptrs.size === 2) { const [d, mx, my] = pdist(); zoomAt(mx, my, st.pinch.s0 * d / st.pinch.d0 / st.view.s); return; }
   const raw = svgPt(e), g = snap(raw);
   st.mouseRaw = raw;
   if (st.pan) {
@@ -1036,7 +1095,10 @@ svg.addEventListener('pointermove', e => {
   if (g.x !== st.mouse.x || g.y !== st.mouse.y) { st.mouse = g; if (st.tool !== 'select') renderOverlay(); }
   showTip(e);
 });
+const ptrEnd = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) st.pinch = null; };
+svg.addEventListener('pointercancel', e => { ptrEnd(e); st.drag = null; st.pan = null; });
 svg.addEventListener('pointerup', e => {
+  ptrEnd(e);
   if (st.drag) {
     if (st.drag.moved) { undoStack.push(st.drag.snap); redoStack.length = 0; changed(); }
     st.drag = null;
@@ -1455,7 +1517,7 @@ function plot(cv, cfg){
   if (has2) { g.textAlign = 'left'; for (const t of niceTicks(z0, z1, Math.max(3, ph / 40 | 0))) g.fillText(+t.toPrecision(4) + '', L + pw + 6, Z(t)); }
   g.textAlign = 'center'; g.textBaseline = 'top';
   let xt;
-  if (cfg.xlog) { xt = []; for (let d = Math.floor(lx0); d <= Math.ceil(lx1); d++) for (const m of [1, 2, 5]) { const v = m * 10 ** d; if (v >= x0 * 0.999 && v <= x1 * 1.001) xt.push(v); } }
+  if (cfg.xlog) { xt = []; for (let d = Math.floor(lx0); d <= Math.ceil(lx1); d++) for (const m of (pw < 520 ? [1] : [1, 2, 5])) { const v = m * 10 ** d; if (v >= x0 * 0.999 && v <= x1 * 1.001) xt.push(v); } }
   else xt = niceTicks(x0, x1, Math.max(3, pw / 80 | 0));
   for (const t of xt) { const x = X(t); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); g.fillText(cfg.xfmt ? cfg.xfmt(t) : t, x, T + ph + 6); }
   g.textAlign = 'left'; g.fillText(cfg.xlabel || '', L + pw - 20, T + ph + 6 + 0);
@@ -1601,7 +1663,7 @@ async function renderWet(dry, token, onProg){
 function ensureCtx(){
   if (!au.ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
-    au.ctx = new AC({sampleRate:SR});
+    try { au.ctx = new AC({sampleRate:SR}); } catch (e) { au.ctx = new AC(); }
     au.master = au.ctx.createGain(); au.master.connect(au.ctx.destination);
   }
   if (au.ctx.state === 'suspended') au.ctx.resume();
@@ -1780,22 +1842,40 @@ function standaloneSVG(){
     circ.comps.map(c => `<g transform="translate(${c.x * GRID} ${c.y * GRID}) rotate(${c.rot * 90})"><g fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${symbol(c).replace(/class="fill"/g, 'fill="#111"').replace(/var\(--[a-z0-9]+\)/g, '#888')}</g></g>${labelsSVG(c).replace(/<text class="ref"/g, '<text font-weight="600" fill="#111"').replace(/<text class=""/g, '<text fill="#444"')}`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${b.x} ${b.y} ${b.w} ${b.h}" width="${b.w}" height="${b.h}" font-family="Arial,sans-serif" font-size="11"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#fff"/>${body}</svg>`;
 }
+function showModal({title, hint = '', text = '', file = null, type = 'text/plain', action = null, actionLabel = 'Carica'}){
+  $('#mTitle').textContent = title; $('#mHint').textContent = hint;
+  const ta = $('#mText'); ta.value = text; ta.readOnly = !action;
+  $('#mAct').hidden = !action; $('#mAct').textContent = actionLabel;
+  $('#mDl').hidden = !file || EMBED;
+  $('#mAct').onclick = () => { try { action(ta.value); $('#modal').hidden = true; } catch (e) { $('#mHint').textContent = '⚠ ' + e.message; } };
+  $('#mDl').onclick = () => download(file, text, type);
+  $('#mCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(ta.value); $('#mCopy').textContent = 'Copiato ✓'; }
+    catch (e) { ta.focus(); ta.select(); try { document.execCommand('copy'); $('#mCopy').textContent = 'Copiato ✓'; } catch (_) { $('#mCopy').textContent = 'Seleziona e copia'; } }
+    setTimeout(() => $('#mCopy').textContent = 'Copia', 1800);
+  };
+  $('#modal').hidden = false;
+  if (action) setTimeout(() => ta.focus(), 30);
+}
+function circuitJSON(){ return JSON.stringify({app:'stompbox-lab', version:1, title:$('#title').value, circuit:circ}, null, 1); }
+function importJSON(txt){ const d = JSON.parse(txt); loadCircuit(d.circuit || d, d.title || 'Circuito importato'); status('Circuito caricato.', 'ok'); }
 function doExport(kind){
   $('#ddExport').classList.remove('open');
   try {
-    if (kind === 'cir') download(fileBase() + '.cir', genNetlist(), 'text/plain');
+    if (kind === 'cir') showModal({title:'Netlist SPICE', hint:'Compatibile con LTspice e ngspice.', text:genNetlist(), file:fileBase() + '.cir'});
     if (kind === 'bom') {
       const q = s => `"${String(s).replace(/"/g, '""')}"`;
       const csv = ['Quantità,Riferimenti,Componente,Valore', ...bomRows().map(r => [r.refs.length, r.refs.join(' '), r.desc, r.val].map(q).join(','))].join('\n');
-      download(fileBase() + '_distinta.csv', '﻿' + csv, 'text/csv');
+      showModal({title:'Distinta componenti (CSV)', hint:'Incollala in un foglio di calcolo.', text:csv, file:fileBase() + '_distinta.csv', type:'text/csv'});
     }
-    if (kind === 'svg') download(fileBase() + '.svg', standaloneSVG(), 'image/svg+xml');
+    if (kind === 'svg') showModal({title:'Schema SVG', hint:'Salva il testo come file .svg per aprirlo in un editor grafico.', text:standaloneSVG(), file:fileBase() + '.svg', type:'image/svg+xml'});
+    if (kind === 'import') showModal({title:'Incolla circuito', hint:'Incolla qui il JSON di un circuito salvato in precedenza.', text:'', action:importJSON});
     if (kind === 'png') {
       const s = standaloneSVG(), img = new Image(), b = contentBox();
       img.onload = () => { const cv = document.createElement('canvas'); cv.width = b.w * 2; cv.height = b.h * 2; const g = cv.getContext('2d'); g.drawImage(img, 0, 0, cv.width, cv.height); cv.toBlob(bl => download(fileBase() + '.png', bl)); };
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
     }
-    if (kind === 'json') saveFile();
+    if (kind === 'json') showModal({title:'Circuito (JSON)', hint:'Copia questo testo per conservare il circuito; poi usa “Incolla circuito” per ricaricarlo.', text:circuitJSON(), file:fileBase() + '.json', type:'application/json'});
     if (kind === 'wav') { if (!au.wetData) throw new Error('Prima esegui “Ascolta” nella scheda audio.'); download(fileBase() + '.wav', encodeWav(au.wetData)); }
     if (kind === 'print') {
       const rows = bomRows();
@@ -1804,7 +1884,10 @@ function doExport(kind){
     }
   } catch (e) { status('⚠ ' + e.message, 'err'); }
 }
-function saveFile(){ download(fileBase() + '.json', JSON.stringify({app:'stompbox-lab', version:1, title:$('#title').value, circuit:circ}, null, 1), 'application/json'); status('Circuito salvato.', 'ok'); }
+function saveFile(){
+  if (EMBED) { doExport('json'); return; }
+  download(fileBase() + '.json', circuitJSON(), 'application/json'); status('Circuito salvato.', 'ok');
+}
 function loadCircuit(c, title){
   if (!c || !Array.isArray(c.comps) || !Array.isArray(c.wires)) throw new Error('File non valido.');
   pushUndo();
@@ -1896,7 +1979,16 @@ function initUI(){
   const sel = $('#selExample');
   for (const k in EXAMPLES) sel.insertAdjacentHTML('beforeend', `<option value="${k}">${EXAMPLES[k][0]}</option>`);
   sel.addEventListener('change', () => { if (!sel.value) return; const [name, fn] = EXAMPLES[sel.value]; loadCircuit(buildExample(fn), name); sel.value = ''; });
-  $('#bNew').onclick = () => { if (circ.comps.length && !confirm('Cancellare il circuito corrente?')) return; loadCircuit({comps:[], wires:[]}, 'Circuito senza titolo'); };
+  let newArm = 0;
+  $('#bNew').onclick = () => {
+    if (circ.comps.length && !newArm) { $('#bNew').textContent = 'Confermi?'; $('#bNew').classList.add('on'); newArm = setTimeout(() => { newArm = 0; $('#bNew').textContent = 'Nuovo'; $('#bNew').classList.remove('on'); }, 3000); return; }
+    clearTimeout(newArm); newArm = 0; $('#bNew').textContent = 'Nuovo'; $('#bNew').classList.remove('on');
+    loadCircuit({comps:[], wires:[]}, 'Circuito senza titolo');
+  };
+  if (EMBED) $$('.localonly').forEach(b => b.hidden = true);
+  $('#mClose').onclick = () => $('#modal').hidden = true;
+  $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#modal').hidden = true; });
+  $('#asideClose').onclick = () => document.body.classList.remove('side');
   $('#bOpen').onclick = () => $('#fOpen').click();
   $('#fOpen').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -1914,7 +2006,8 @@ function initUI(){
   $('#bFit').onclick = fit;
   $('#cShowV').onchange = renderOverlay;
   $('#bTheme').onclick = () => {
-    const cur = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    const eff = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    const cur = eff === 'light' ? 'dark' : 'light';
     document.documentElement.dataset.theme = cur;
     try { localStorage.setItem('stompboxlab.theme', cur); } catch (e) {}
     redrawPlots();
@@ -1977,6 +2070,7 @@ function initUI(){
     if (ctrl && k === 'd') { e.preventDefault(); duplicateSel(); return; }
     if (ctrl) return;
     if (e.key === 'F5') { e.preventDefault(); runAll(true); return; }
+    if (e.key === 'Escape' && !$('#modal').hidden) { $('#modal').hidden = true; return; }
     if (e.key === 'Escape') { document.activeElement?.blur?.(); if (st.tool === 'wire' && st.wireStart) finishWire(); else setTool('select'); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSel(); return; }
     if (e.key === ' ') { e.preventDefault(); rotateSel(); return; }
@@ -1987,7 +2081,7 @@ function initUI(){
 
 initUI();
 (function boot(){
-  try { const th = localStorage.getItem('stompboxlab.theme'); if (th) document.documentElement.dataset.theme = th; } catch (e) {}
+  try { const th = localStorage.getItem('stompboxlab.theme'); if (th && !EMBED) document.documentElement.dataset.theme = th; } catch (e) {}
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('stompboxlab.v1') || 'null'); } catch (e) {}
   if (saved && saved.circ && saved.circ.comps.length) { circ = saved.circ; $('#title').value = saved.title || 'Circuito'; }
