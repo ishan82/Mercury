@@ -212,6 +212,7 @@ footer .err{color:var(--err)} footer .ok{color:var(--ok)}
   <select id="selExample" title="Carica un circuito di esempio"><option value="">Esempi…</option></select>
   <div class="dd" id="ddExport"><button id="bExport">Esporta ▾</button>
     <div class="ddm">
+      <button data-exp="pedal">PedalSpice (.pedal.json)</button>
       <button data-exp="cir">Netlist SPICE (.cir)</button>
       <button data-exp="bom">Distinta componenti (.csv)</button>
       <button data-exp="svg">Schema (.svg)</button>
@@ -283,7 +284,7 @@ footer .err{color:var(--err)} footer .ok{color:var(--ok)}
       <div class="row"><label>Ampiezza (V pk)</label><input type="text" id="sAmp" value="0.3"></div>
       <div class="row"><label>Forma</label><select id="sWave"><option value="sine">Sinusoide</option><option value="tri">Triangolare</option><option value="square">Quadra</option></select></div>
       <div class="row"><label>Periodi</label><input type="number" id="sPer" value="3" min="1" max="20"></div>
-      <div class="row"><label>Assestamento</label><select id="sSettle"><option value="50">50 ms</option><option value="200" selected>200 ms</option><option value="500">500 ms</option><option value="1000">1 s</option></select></div>
+      <div class="row"><label>Assestamento</label><select id="sSettle"><option value="50">50 ms</option><option value="100" selected>100 ms</option><option value="200">200 ms</option><option value="500">500 ms</option><option value="1000">1 s</option></select></div>
       <label class="chk"><input type="checkbox" id="sShowIn" checked> Mostra ingresso</label>
     </div>
     <div class="plots">
@@ -376,6 +377,12 @@ function fmtEng(v, unit = ''){
     return s + p + unit;
   }
   return v.toExponential(2) + unit;
+}
+function fmtVal(v){ // come fmtEng ma con 6 cifre significative
+  if (!isFinite(v) || v === 0) return String(v);
+  const a = Math.abs(v), P = [[1e9,'G'],[1e6,'M'],[1e3,'k'],[1,''],[1e-3,'m'],[1e-6,'µ'],[1e-9,'n'],[1e-12,'p'],[1e-15,'f']];
+  for (const [f, px] of P) if (a >= f * 0.9999995) return String(+(v / f).toPrecision(6)) + px;
+  return String(v);
 }
 const fmtV = v => (isFinite(v) ? v.toFixed(Math.abs(v) < 10 ? 3 : 2) : '—') + ' V';
 
@@ -694,7 +701,9 @@ function compile(cc){
 /* =========================================================================
    MOTORE DI SIMULAZIONE (MNA + Newton-Raphson + trapezi)
    ========================================================================= */
+let LU_COLS = new Int32Array(64);
 function luSolve(A, b, n){
+  if (LU_COLS.length < n) LU_COLS = new Int32Array(n * 2);
   for (let k = 0; k < n; k++) {
     let p = k, m = Math.abs(A[k * n + k]);
     for (let i = k + 1; i < n; i++) { const v = Math.abs(A[i * n + k]); if (v > m) { m = v; p = i; } }
@@ -703,23 +712,27 @@ function luSolve(A, b, n){
       for (let j = k; j < n; j++) { const t = A[k * n + j]; A[k * n + j] = A[p * n + j]; A[p * n + j] = t; }
       const t = b[k]; b[k] = b[p]; b[p] = t;
     }
-    const akk = A[k * n + k];
+    const akk = A[k * n + k], rk = k * n;
+    let nc = 0;
+    for (let j = k + 1; j < n; j++) if (A[rk + j] !== 0) LU_COLS[nc++] = j;
     for (let i = k + 1; i < n; i++) {
-      const f = A[i * n + k] / akk;
-      if (f === 0) continue;
-      const ri = i * n, rk = k * n;
-      for (let j = k + 1; j < n; j++) A[ri + j] -= f * A[rk + j];
+      const ri = i * n, a = A[ri + k];
+      if (a === 0) continue;
+      const f = a / akk;
+      for (let q = 0; q < nc; q++) { const j = LU_COLS[q]; A[ri + j] -= f * A[rk + j]; }
       b[i] -= f * b[k];
     }
   }
   for (let i = n - 1; i >= 0; i--) {
     let s = b[i];
-    for (let j = i + 1; j < n; j++) s -= A[i * n + j] * b[j];
-    b[i] = s / A[i * n + i];
+    const ri = i * n;
+    for (let j = i + 1; j < n; j++) { const a = A[ri + j]; if (a !== 0) s -= a * b[j]; }
+    b[i] = s / A[ri + i];
   }
   return true;
 }
 function cluSolve(Ar, Ai, br, bi, n){
+  if (LU_COLS.length < n) LU_COLS = new Int32Array(n * 2);
   for (let k = 0; k < n; k++) {
     let p = k, m = Ar[k * n + k] ** 2 + Ai[k * n + k] ** 2;
     for (let i = k + 1; i < n; i++) { const v = Ar[i * n + k] ** 2 + Ai[i * n + k] ** 2; if (v > m) { m = v; p = i; } }
@@ -732,12 +745,14 @@ function cluSolve(Ar, Ai, br, bi, n){
       let t = br[k]; br[k] = br[p]; br[p] = t; t = bi[k]; bi[k] = bi[p]; bi[p] = t;
     }
     const pr = Ar[k * n + k], pi = Ai[k * n + k], d = pr * pr + pi * pi;
+    let nc = 0;
+    for (let j = k + 1; j < n; j++) if (Ar[k * n + j] !== 0 || Ai[k * n + j] !== 0) LU_COLS[nc++] = j;
     for (let i = k + 1; i < n; i++) {
       const xr = Ar[i * n + k], xi = Ai[i * n + k];
       if (xr === 0 && xi === 0) continue;
       const fr = (xr * pr + xi * pi) / d, fi = (xi * pr - xr * pi) / d;
-      for (let j = k + 1; j < n; j++) {
-        const yr = Ar[k * n + j], yi = Ai[k * n + j];
+      for (let q = 0; q < nc; q++) {
+        const j = LU_COLS[q], yr = Ar[k * n + j], yi = Ai[k * n + j];
         Ar[i * n + j] -= fr * yr - fi * yi; Ai[i * n + j] -= fr * yi + fi * yr;
       }
       br[i] -= fr * br[k] - fi * bi[k]; bi[i] -= fr * bi[k] + fi * br[k];
@@ -1342,7 +1357,10 @@ function toggleSwitch(c){
 }
 let simTimer = 0, liveQueued = false;
 function changed(opts = {}){
-  render(); if (!opts.keepProps) renderProps(); renderKnobs();
+  const el = opts.comp && gC.querySelector(`[data-cid="${opts.comp.id}"]`);
+  if (opts.live && el) el.outerHTML = compSVG(opts.comp, selSets().c.has(opts.comp.id) ? 'sel' : '');
+  else render();
+  if (!opts.keepProps) renderProps(); renderKnobs();
   try { localStorage.setItem('stompboxlab.v1', JSON.stringify({title:$('#title').value, circ})); } catch (e) {}
   clearTimeout(simTimer);
   if (opts.live) { // aggiornamento in tempo reale: al massimo una simulazione per fotogramma
@@ -1531,7 +1549,7 @@ function bindKnob(el){
   const set = (v, live = true) => {
     const p = get(); if (!p) return;
     p.props.pos = +clamp(v, 0, 1).toFixed(3); updateKnob(el, p);
-    changed({keepProps:true, live});
+    changed({keepProps:true, live, comp:p});
     if (st.sel?.id === p.id) { const r = $('#props [data-k=pos]'); if (r) r.value = p.props.pos; }
   };
   sv.addEventListener('pointerdown', e => {
@@ -1569,7 +1587,7 @@ function runAll(forced){
   let ctx = null, errMsg = null;
   try { ctx = prepare(); }
   catch (err) { errMsg = err.message; st.err = err.message; }
-  renderDC(); renderNetTab();
+  if (!st.sticky) { renderDC(); renderNetTab(); }
   const tab = activeTab();
   if (ctx && (forced || $('#cAuto').checked) && tab === 'ana') {
     try { runFreq(ctx); } catch (err) { errMsg = err.message; $('#roFreq').innerHTML = `<span class="tag err">${esc(err.message)}</span>`; }
@@ -1581,7 +1599,7 @@ function runAll(forced){
   if (ctx && forced && tab === 'audio') audioPlay();
   if (errMsg) status('⚠ ' + errMsg, 'err');
   else status(`Simulazione completata in ${(performance.now() - t0).toFixed(0)} ms.`, 'ok');
-  renderOverlay();
+  if (!st.sticky) renderOverlay();
   if (st.sel?.kind === 'comp') { const old = $('#props p.dcinfo'); if (old) old.outerHTML = devInfo(findComp(st.sel.id)) || ''; }
   $('#stInfo').textContent = st.net ? `${st.net.n - st.net.internal.size} nodi · ${circ.comps.length} componenti` : '';
 }
@@ -1602,9 +1620,9 @@ function runScope(ctx){
   const f = parseVal($('#sFreq').value), amp = parseVal($('#sAmp').value);
   if (!(f > 0) || !(amp >= 0)) throw new Error('Frequenza o ampiezza del segnale non valida.');
   if (!net.ins.length) throw new Error("Aggiungi un ingresso (IN) per vedere la forma d'onda.");
-  const N = st.sticky ? 128 : 256, h = 1 / (f * N), per = clamp(+$('#sPer').value || 3, 1, 20);
+  const N = st.sticky ? 96 : 128, h = 1 / (f * N), per = clamp(+$('#sPer').value || 3, 1, 20);
   let settle = Math.ceil(+$('#sSettle').value / 1000 * f) * N;
-  settle = Math.min(settle, (st.sticky ? 40 : 200) * N, 240000 - (240000 % N));
+  settle = Math.min(settle, (st.sticky ? 12 : 200) * N, 240000 - (240000 % N));
   const kind = $('#sWave').value, traces = outputs(net);
   sim.initTran(h);
   for (let i = 0; i < settle; i++) sim.step(amp * wave(kind, i / N));
@@ -2162,6 +2180,10 @@ function importJSON(txt){ const d = JSON.parse(txt); loadCircuit(d.circuit || d,
 function doExport(kind){
   $('#ddExport').classList.remove('open');
   try {
+    if (kind === 'pedal') {
+      const {json, warnings} = exportPedal();
+      showModal({title:'Esporta per PedalSpice', hint:(warnings.length ? '⚠ ' + warnings.join(' ') + ' ' : '') + 'Salva il file e aprilo in PedalSpice, oppure copia il testo.', text:JSON.stringify(json, null, 1), file:fileBase() + '.pedal.json', type:'application/json'});
+    }
     if (kind === 'cir') showModal({title:'Netlist SPICE', hint:'Compatibile con LTspice e ngspice.', text:genNetlist(), file:fileBase() + '.cir'});
     if (kind === 'bom') {
       const q = s => `"${String(s).replace(/"/g, '""')}"`;
@@ -2169,7 +2191,7 @@ function doExport(kind){
       showModal({title:'Distinta componenti (CSV)', hint:'Incollala in un foglio di calcolo.', text:csv, file:fileBase() + '_distinta.csv', type:'text/csv'});
     }
     if (kind === 'svg') showModal({title:'Schema SVG', hint:'Salva il testo come file .svg per aprirlo in un editor grafico.', text:standaloneSVG(), file:fileBase() + '.svg', type:'image/svg+xml'});
-    if (kind === 'import') showModal({title:'Importa circuito', hint:'Incolla una netlist SPICE (LTspice: View → SPICE Netlist; ngspice; PedalSpice: export netlist) oppure il JSON di un circuito salvato.', text:'', action:t => importAny(t), actionLabel:'Importa'});
+    if (kind === 'import') showModal({title:'Importa circuito', hint:'Incolla un file PedalSpice (.json), una netlist SPICE (LTspice: View → SPICE Netlist; ngspice) oppure il JSON di un circuito di Stompbox Lab.', text:'', action:t => importAny(t), actionLabel:'Importa'});
     if (kind === 'png') {
       const s = standaloneSVG(), img = new Image(), b = contentBox();
       img.onload = () => { const cv = document.createElement('canvas'); cv.width = b.w * 2; cv.height = b.h * 2; const g = cv.getContext('2d'); g.drawImage(img, 0, 0, cv.width, cv.height); cv.toBlob(bl => download(fileBase() + '.png', bl)); };
@@ -2443,11 +2465,281 @@ function layoutImported(list){
 function importAny(text, nameHint = ''){
   const t = String(text).trim();
   if (!t) throw new Error('Il testo è vuoto.');
-  if (t.startsWith('{')) { importJSON(t); return; }
+  if (t.startsWith('{')) {
+    let d; try { d = JSON.parse(t); } catch (e) { throw new Error('JSON non valido: ' + e.message); }
+    if (d.app === 'pedal-sim' || (Array.isArray(d.parts) && Array.isArray(d.wires))) {
+      const r = importPedal(d);
+      loadCircuit(r.circuit, r.title);
+      if (r.amp > 0) { $('#sAmp').value = String(r.amp); runAll(true); }
+      status(`Circuito PedalSpice importato: ${r.count} componenti${r.warnings.length ? ', ' + r.warnings.length + ' avvisi' : ''}.`, r.warnings.length ? '' : 'ok');
+      if (r.warnings.length) showModal({title:'Import PedalSpice completato con avvisi', hint:`${r.count} componenti importati. Controlla questi punti:`, text:r.warnings.map(w => '• ' + w).join('\n')});
+      return;
+    }
+    importJSON(t); return;
+  }
   const r = importNetlist(t);
   loadCircuit(r.circuit, r.title || nameHint);
   status(`Netlist importata: ${r.count} componenti${r.warnings.length ? ', ' + r.warnings.length + ' avvisi' : ''}.`, r.warnings.length ? '' : 'ok');
   if (r.warnings.length) showModal({title:'Import completato con avvisi', hint:`${r.count} componenti importati. Controlla questi punti:`, text:r.warnings.map(w => '• ' + w).join('\n')});
+}
+
+/* =========================================================================
+   FORMATO PEDALSPICE ("pedal-sim" JSON): import ed export
+   I collegamenti sono tra terminali (part, term); le coordinate sono in px (10 px = 1 passo).
+   ========================================================================= */
+const PS = {
+  scale:10,
+  // terminali PedalSpice -> pin di Stompbox Lab
+  terms:{resistor:['a', 'b'], capacitor:['a', 'b'], inductor:['a', 'b'], pot:['a', 'b', 'w'], diode:['a', 'k'],
+    npn:['c', 'b', 'e'], pnp:['c', 'b', 'e'], jfet:['d', 'g', 's'], mosfet:['d', 'g', 's'], opamp:['p', 'n', 'o'],
+    pickup:['a'], load:['a'], ground:['a'], vplus:['a']},
+  type:{resistor:'R', capacitor:'C', inductor:'L', pot:'POT', npn:'NPN', pnp:'PNP', jfet:'JFET', mosfet:'NMOS', opamp:'OPAMP', pickup:'IN', load:'OUT', ground:'GND', vplus:'VCC'},
+  led:{LED:'LED rosso', LED_RED:'LED rosso', LED_GREEN:'LED verde', LED_YELLOW:'LED giallo', LED_BLUE:'LED blu', LED_WHITE:'LED bianco'},
+  taperIn:{audio:'log', log:'log', linear:'lin', lin:'lin', reverse:'rlog', antilog:'rlog', 'reverse audio':'rlog'},
+  taperOut:{log:'audio', lin:'linear', rlog:'reverse'},
+};
+const railVal = r => { const v = parseFloat(String(r).replace(/[^0-9.+\-]/g, '')); return isFinite(v) ? v : 9; };
+function supplyRails(s){
+  s = String(s || 'pm9').toLowerCase();
+  const m = s.match(/^pm(\d+(?:\.\d+)?)$/); if (m) return [+m[1], -m[1]];
+  const v = parseFloat(s); return isFinite(v) ? [v, 0] : [9, -9];
+}
+function importPedal(d){
+  if (!d || !Array.isArray(d.parts) || !Array.isArray(d.wires)) throw new Error('File PedalSpice non valido: mancano "parts" o "wires".');
+  const warnings = [], parts = new Map(d.parts.map(p => [p.id, p]));
+  // 1. reti volute (union-find sui terminali)
+  const P = new Map();
+  const find = k => { if (!P.has(k)) P.set(k, k); let r = k; while (P.get(r) !== r) r = P.get(r); let c = k; while (P.get(c) !== r) { const n = P.get(c); P.set(c, r); c = n; } return r; };
+  const uni = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) P.set(ra, rb); };
+  const tk = e => `${e.part}:${parts.get(e.part)?.type === 'junction' ? 0 : e.term}`;
+  for (const w of d.wires) { if (!parts.has(w.a?.part) || !parts.has(w.b?.part)) { warnings.push(`Filo ${w.id}: collega un componente inesistente, ignorato.`); continue; } uni(tk(w.a), tk(w.b)); }
+  for (const p of d.parts) if (p.type === 'ground') uni(`${p.id}:0`, 'GND');
+  const netOf = (id, t) => find(`${id}:${t}`);
+  const isSupplyTerm = (p, t) => p.type === 'opamp' && (t === 3 || t === 4);
+  // 2. alimentazioni: un vplus che alimenta solo op-amp non diventa un componente
+  const vplusNet = new Map(); // rete -> tensione
+  for (const p of d.parts) if (p.type === 'vplus') vplusNet.set(netOf(p.id, 0), railVal(p.rail));
+  const netMembers = new Map();
+  for (const p of d.parts) for (let t = 0; t < 5; t++) if (P.has(`${p.id}:${t}`)) { const n = netOf(p.id, t); if (!netMembers.has(n)) netMembers.set(n, []); netMembers.get(n).push([p, t]); }
+  const supplyOnly = n => (netMembers.get(n) || []).every(([p, t]) => p.type === 'vplus' || p.type === 'junction' || isSupplyTerm(p, t));
+  const [defPos, defNeg] = supplyRails(d.supply);
+  const railOfTerm = (p, t, def) => { if (!P.has(`${p.id}:${t}`)) return def; const n = netOf(p.id, t); if (n === find('GND')) return 0; return vplusNet.has(n) ? vplusNet.get(n) : def; };
+  // 3. componenti
+  const comps = [], byPart = new Map(), usedRefs = new Set();
+  const S = PS.scale;
+  for (const p of d.parts) {
+    if (p.type === 'junction' || p.type === 'note') continue;
+    if (p.type === 'vplus' && supplyOnly(netOf(p.id, 0))) continue;
+    let type = PS.type[p.type], props = {};
+    if (p.type === 'diode') {
+      const m = String(p.model || '');
+      if (/^led/i.test(m)) { type = 'LED'; props.model = PS.led[m.toUpperCase()] || 'LED rosso'; }
+      else if (/zener|^1n47/i.test(m)) { type = 'ZENER'; props.model = libMatch('ZENER', m) || '1N4733 (5,1 V)'; }
+      else { type = 'D'; props.model = libMatch('D', m) || (warnings.push(`${p.ref}: diodo "${m}" non in libreria, uso 1N4148.`), '1N4148'); }
+    }
+    if (!type) { warnings.push(`${p.ref || p.id}: tipo "${p.type}" non supportato, ignorato.`); continue; }
+    switch (type) {
+      case 'R': case 'C': case 'L': props.value = fmtVal(+p.value); if (type === 'C') props.polar = +p.value >= 1e-6; break;
+      case 'POT': props = {value:fmtVal(+p.value), pos:clamp(+p.pos ?? 0.5, 0, 1), taper:PS.taperIn[String(p.taper).toLowerCase()] || 'lin', label:p.name || p.ref}; break;
+      case 'NPN': case 'PNP': case 'JFET': case 'NMOS': props.model = libMatch(type, p.model || '') || (warnings.push(`${p.ref}: modello "${p.model}" non in libreria, uso ${Object.keys(MODELS[type])[0]}.`), Object.keys(MODELS[type])[0]); break;
+      case 'OPAMP':
+        props.model = libMatch('OPAMP', p.model || '') || (warnings.push(`${p.ref}: op-amp "${p.model}" non in libreria, uso TL072.`), 'TL072');
+        props.vpos = railOfTerm(p, 3, defPos); props.vneg = railOfTerm(p, 4, defNeg);
+        break;
+      case 'IN': props.rs = p.model === 'ideal' || !p.model ? '1m' : '6.8k'; if (p.model && p.model !== 'ideal') warnings.push(`${p.ref}: pickup "${p.model}" approssimato con una sorgente da 6,8 kΩ.`); break;
+      case 'OUT': props.rl = '1G'; break;
+      case 'VCC': props.value = railVal(p.rail); break;
+    }
+    const want = String(p.ref || '');
+    const ref = TYPES[type].prefix ? (/^[A-Za-z]+\d+$/.test(want) && !usedRefs.has(want) ? want : '') : '';
+    if (ref) usedRefs.add(ref);
+    const c = {id:newId('c'), type, x:Math.round(p.x / S), y:Math.round(p.y / S), rot:(Math.round((p.rot || 0) / 90) % 4 + 4) % 4, props:{...defaultProps(type), ...props}, ref};
+    comps.push(c); byPart.set(p.id, c);
+  }
+  for (const c of comps) if (TYPES[c.type].prefix && !c.ref) { let k = 1; while (usedRefs.has(TYPES[c.type].prefix + k)) k++; c.ref = TYPES[c.type].prefix + k; usedRefs.add(c.ref); }
+  const pickup = d.parts.find(p => p.type === 'pickup');
+  // 4. instradamento dei fili con controllo dei cortocircuiti accidentali
+  const out = {comps:comps.slice(), wires:[]};
+  const occ = new Map(), segs = [];
+  const occupy = (pt, n) => { const k = K(pt); if (!occ.has(k)) occ.set(k, n); return occ.get(k) === n; };
+  let placementOk = true;
+  for (const [pid, c] of byPart) {
+    const p = parts.get(pid), names = PS.terms[p.type];
+    names.forEach((pn, t) => { if (!occupy(pinPos(c, pn), P.has(`${pid}:${t}`) ? netOf(pid, t) : `${pid}:${t}`)) placementOk = false; });
+  }
+  const endpoint = e => {
+    const p = parts.get(e.part);
+    if (p.type === 'junction') return {x:Math.round(p.x / S), y:Math.round(p.y / S)};
+    const c = byPart.get(e.part); if (!c) return null;
+    const pn = PS.terms[p.type][e.term]; return pn ? pinPos(c, pn) : null;
+  };
+  const onSegIncl = (a, b, q) => (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) === 0 && q.x >= Math.min(a.x, b.x) && q.x <= Math.max(a.x, b.x) && q.y >= Math.min(a.y, b.y) && q.y <= Math.max(a.y, b.y);
+  const segOk = (a, b, n) => {
+    for (const [k, m] of occ) if (m !== n) { const [x, y] = k.split(',').map(Number); if (onSegIncl(a, b, {x, y})) return false; }
+    for (const s of segs) if (s.n !== n && (onSegIncl(a, b, s.a) || onSegIncl(a, b, s.b) || onSegIncl(s.a, s.b, a) || onSegIncl(s.a, s.b, b))) return false;
+    return true;
+  };
+  let labels = 0;
+  const netName = new Map(); let nn = 0;
+  const labelFor = n => { if (!netName.has(n)) netName.set(n, 'N' + (++nn)); return netName.get(n); };
+  for (const w of d.wires) {
+    const pa = parts.get(w.a?.part), pb = parts.get(w.b?.part);
+    if (!pa || !pb) continue;
+    if (isSupplyTerm(pa, w.a.term) || isSupplyTerm(pb, w.b.term)) continue;
+    if ((pa.type === 'vplus' && !byPart.has(pa.id)) || (pb.type === 'vplus' && !byPart.has(pb.id))) continue;
+    const A = endpoint(w.a), B = endpoint(w.b);
+    if (!A || !B || (A.x === B.x && A.y === B.y)) continue;
+    const n = find(tk(w.a));
+    const routes = [[A, B]];
+    if (A.x !== B.x && A.y !== B.y) { routes.length = 0; routes.push([A, {x:B.x, y:A.y}, B], [A, {x:A.x, y:B.y}, B]); }
+    const ok = routes.find(r => r.slice(1).every((q, i) => segOk(r[i], q, n)) && r.every(q => !occ.has(K(q)) || occ.get(K(q)) === n));
+    if (ok) {
+      for (let i = 1; i < ok.length; i++) { out.wires.push({id:newId('w'), a:{...ok[i - 1]}, b:{...ok[i]}}); segs.push({a:ok[i - 1], b:ok[i], n}); }
+      ok.forEach(q => occupy(q, n));
+    } else { // nessun percorso libero: etichette di rete sui due capi
+      for (const q of [A, B]) out.comps.push({id:newId('c'), type:'NET', x:q.x, y:q.y, rot:0, props:{name:labelFor(n)}, ref:''});
+      labels++;
+    }
+  }
+  // 5. verifica: le reti ricostruite devono coincidere con quelle del file
+  let valid = placementOk;
+  try {
+    const net = compile(out), map = new Map(), rev = new Map();
+    for (const [pid, c] of byPart) {
+      const p = parts.get(pid);
+      PS.terms[p.type].forEach((pn, t) => {
+        if (!P.has(`${pid}:${t}`)) return;
+        const want = netOf(pid, t), got = net.pinNode.get(c.id + ':' + pn);
+        if (map.has(want) && map.get(want) !== got) valid = false;
+        if (rev.has(got) && rev.get(got) !== want) valid = false;
+        map.set(want, got); rev.set(got, want);
+      });
+    }
+  } catch (e) { valid = false; }
+  let circuit = out;
+  if (!valid) { // ripiego sicuro: disposizione a etichette di rete
+    warnings.push('La disposizione originale creava collegamenti ambigui: il circuito è stato ridisposto con etichette di rete (i collegamenti sono corretti).');
+    const list = [];
+    for (const [pid, c] of byPart) {
+      const p = parts.get(pid), pins = {};
+      PS.terms[p.type].forEach((pn, t) => { pins[pn] = P.has(`${pid}:${t}`) ? (netOf(pid, t) === find('GND') ? '0' : labelFor(netOf(pid, t))) : null; });
+      if (c.type === 'GND') continue;
+      list.push({type:c.type, ref:c.ref, props:c.props, pins});
+    }
+    circuit = layoutImported(list);
+  } else if (labels) warnings.push(`${labels} collegamenti disegnati con etichette di rete per evitare incroci ambigui.`);
+  const extra = {};
+  for (const k of ['blocks', 'chain', 'chainWires', 'cutJoints', 'cutTouches']) if (Array.isArray(d[k])) extra[k] = d[k];
+  const notes = d.parts.filter(p => p.type === 'note');
+  if (notes.length) warnings.push(`${notes.length} note di testo non visualizzate qui: vengono conservate e riesportate.`);
+  circuit.meta = {pedalspice:{supply:d.supply, adv:d.adv, amp:pickup?.amp, extra, notes}};
+  return {circuit, title:d.name || 'Circuito PedalSpice', warnings, count:comps.length, amp:pickup?.amp};
+}
+function exportPedal(){
+  const net = compile(circ), warnings = [];
+  const parts = [], wires = [];
+  let id = 1;
+  const typeOut = {R:'resistor', C:'capacitor', L:'inductor', POT:'pot', D:'diode', LED:'diode', ZENER:'diode', NPN:'npn', PNP:'pnp', JFET:'jfet', NMOS:'mosfet', OPAMP:'opamp', IN:'pickup', OUT:'load', GND:'ground', VCC:'vplus'};
+  const pinsOut = {R:['a', 'b'], C:['a', 'b'], L:['a', 'b'], POT:['a', 'b', 'w'], D:['a', 'k'], LED:['a', 'k'], ZENER:['a', 'k'], NPN:['c', 'b', 'e'], PNP:['c', 'b', 'e'], JFET:['d', 'g', 's'], NMOS:['d', 'g', 's'], OPAMP:['p', 'n', 'o'], IN:['a'], OUT:['a'], GND:['a'], VCC:['a']};
+  const ledOut = Object.fromEntries(Object.entries(PS.led).filter(([k]) => k !== 'LED_RED').map(([k, v]) => [v, k]));
+  const S = PS.scale, netPins = new Map(), counters = {};
+  const addPin = (n, part, term, x, y) => { if (!netPins.has(n)) netPins.set(n, []); netPins.get(n).push({part, term, x, y}); };
+  const bump = ref => { const m = String(ref).match(/^([A-Za-z]+)(\d+)$/); if (m) counters[m[1]] = Math.max(counters[m[1]] || 1, +m[2] + 1); };
+  const rail = v => (v > 0 ? '+' : '') + fmtP(v);
+  let vp = 0, gnd = 0, jp = 0;
+  let neg = false, vmax = 9;
+  const swLinks = [];
+  for (const c of circ.comps) {
+    const pr = c.props;
+    if (c.type === 'SW') {
+      const s = swState(c);
+      if (s !== 'off' && !(s === 'b' && pr.mode === 'spst')) swLinks.push([pinPos(c, 'c'), pinPos(c, s)]);
+      warnings.push(`${c.ref}: PedalSpice non ha un deviatore equivalente; esportato come collegamento fisso nella posizione attuale.`);
+      continue;
+    }
+    if (c.type === 'NET' || c.type === 'PROBE') continue;
+    if (!typeOut[c.type]) { warnings.push(`${c.ref || c.type}: ${TYPES[c.type].name} non esportabile in PedalSpice, omesso.`); continue; }
+    const p = {id:id++, type:typeOut[c.type], ref:c.ref || (c.type === 'GND' ? 'G' + (++gnd) : 'VP' + (++vp)), x:c.x * S, y:c.y * S, rot:c.rot * 90};
+    switch (c.type) {
+      case 'R': case 'C': case 'L': p.value = parseVal(pr.value); break;
+      case 'POT': Object.assign(p, {value:parseVal(pr.value), pos:+pr.pos, taper:PS.taperOut[pr.taper] || 'linear', name:pr.label || c.ref}); break;
+      case 'D': case 'ZENER': p.model = pr.model === CUSTOM ? (pr.importedName || '1N4148') : pr.model.split(' ')[0]; break;
+      case 'LED': p.model = ledOut[pr.model] || 'LED'; break;
+      case 'NPN': case 'PNP': case 'JFET': case 'NMOS': p.model = pr.model === CUSTOM ? (pr.importedName || '') : pr.model.split(' ')[0]; break;
+      case 'OPAMP': p.model = pr.model === CUSTOM ? (pr.importedName || 'TL072') : pr.model.split(' ')[0]; break;
+      case 'IN': p.model = 'ideal'; p.amp = parseVal($('#sAmp').value) || 0.1; break;
+      case 'VCC': p.rail = rail(parseVal(pr.value)); break;
+    }
+    if (c.type === 'IN') p.ref = 'IN';
+    if (c.type === 'OUT') p.ref = 'OUT';
+    parts.push(p); bump(p.ref);
+    const extraR = (val, x, y, rot) => { const r = {id:id++, type:'resistor', ref:'R' + (900 + id), x:x * S, y:y * S, rot:rot * 90, value:val}; parts.push(r); return r; };
+    if (c.type === 'IN' && parseVal(pr.rs) > 1e-2) {
+      // pickup ideale arretrato di 4 passi + resistenza serie al posto del simbolo IN = sorgente con impedenza
+      const [dx, dy] = rotPt([1, 0], c.rot);
+      p.x = (c.x - 4 * dx) * S; p.y = (c.y - 4 * dy) * S;
+      const r = extraR(parseVal(pr.rs), c.x, c.y, c.rot);
+      addPin('src:' + c.id, p.id, 0, c.x - 2 * dx, c.y - 2 * dy); addPin('src:' + c.id, r.id, 0, c.x - 2 * dx, c.y - 2 * dy);
+      const q = pinPos(c, 'a'); addPin(net.pinNode.get(c.id + ':a'), r.id, 1, q.x, q.y);
+    } else if (c.type === 'OUT' && parseVal(pr.rl) < 1e8) { // carico come resistenza verso massa sotto il pin OUT
+      const q = pinPos(c, 'a'), rr = (c.rot + 1) % 4, [ax, ay] = rotPt([-2, 0], rr), [bx, by] = rotPt([2, 0], rr);
+      const r = extraR(parseVal(pr.rl), q.x - ax, q.y - ay, rr);
+      const gx = q.x - ax + bx, gy = q.y - ay + by;
+      const g = {id:id++, type:'ground', ref:'G' + (++gnd), x:gx * S, y:gy * S, rot:c.rot * 90}; parts.push(g);
+      addPin('load:' + c.id, r.id, 1, gx, gy); addPin('load:' + c.id, g.id, 0, gx, gy);
+      const n = net.pinNode.get(c.id + ':a');
+      addPin(n, p.id, 0, q.x, q.y); addPin(n, r.id, 0, q.x, q.y);
+    } else pinsOut[c.type].forEach((pn, t) => { const q = pinPos(c, pn); addPin(net.pinNode.get(c.id + ':' + pn), p.id, t, q.x, q.y); });
+    if (c.type === 'OPAMP') { // pin di alimentazione verso simboli vplus/massa
+      const vpos = parseVal(pr.vpos), vneg = parseVal(pr.vneg);
+      vmax = Math.max(vmax, vpos); if (vneg < 0) neg = true;
+      const sup = (v, t, dy) => {
+        const q = v === 0 ? {id:id++, type:'ground', ref:'G' + (++gnd), x:c.x * S, y:(c.y + dy) * S, rot:dy < 0 ? 180 : 0}
+                          : {id:id++, type:'vplus', ref:'VP' + (++vp), x:c.x * S, y:(c.y + dy) * S, rot:0, rail:rail(v)};
+        parts.push(q); bump(q.ref);
+        wires.push({id:id++, a:{part:p.id, term:t}, b:{part:q.id, term:0}});
+      };
+      sup(vpos, 3, -4); sup(vneg, 4, 4);
+    }
+  }
+  // collegamenti: ogni segmento di filo diventa un filo PedalSpice fra terminali e giunzioni,
+  // così il disegno si conserva; i punti senza componente diventano giunzioni
+  const pt = new Map();
+  const link = (x, y, dir) => { if (x.part === y.part && x.term === y.term) return; const w = {id:id++, a:{part:x.part, term:x.term}, b:{part:y.part, term:y.term}}; if (dir) w.dir = dir; wires.push(w); };
+  for (const list of netPins.values()) for (const q of list) { const k = q.x + ',' + q.y; if (pt.has(k)) link(pt.get(k), q); else pt.set(k, q); }
+  const jAt = (x, y) => {
+    const k = x + ',' + y;
+    if (!pt.has(k)) { const j = {id:id++, type:'junction', ref:'JP' + (++jp), x:x * S, y:y * S, rot:0}; parts.push(j); bump(j.ref); pt.set(k, {part:j.id, term:0}); }
+    return pt.get(k);
+  };
+  const allPts = [...new Set([...pt.keys(), ...circ.wires.flatMap(w => [K(w.a), K(w.b)])])].map(k => k.split(',').map(Number));
+  for (const w of circ.wires) {
+    const inner = allPts.filter(([x, y]) => onSeg(w, x, y)).map(([x, y]) => ({x, y}))
+      .sort((p1, p2) => Math.hypot(p1.x - w.a.x, p1.y - w.a.y) - Math.hypot(p2.x - w.a.x, p2.y - w.a.y));
+    const seq = [w.a, ...inner, w.b];
+    for (let i = 0; i + 1 < seq.length; i++) link(jAt(seq[i].x, seq[i].y), jAt(seq[i + 1].x, seq[i + 1].y), seq[i].y === seq[i + 1].y ? 'h' : 'v');
+  }
+  // etichette di rete con lo stesso nome e deviatori chiusi: collegamenti logici
+  const byName = new Map();
+  for (const c of circ.comps) if (c.type === 'NET' && String(c.props.name || '').trim()) {
+    const nm = /^(0|gnd)$/i.test(String(c.props.name).trim()) ? '#GND' : String(c.props.name).trim();
+    if (!byName.has(nm)) byName.set(nm, []);
+    const q = pinPos(c, 'a'); byName.get(nm).push(jAt(q.x, q.y));
+  }
+  const g0 = circ.comps.find(c => c.type === 'GND');
+  if (byName.has('#GND') && g0) { const q = pinPos(g0, 'a'); byName.get('#GND').unshift(jAt(q.x, q.y)); }
+  for (const list of byName.values()) for (let i = 1; i < list.length; i++) link(list[0], list[i]);
+  for (const [x, y] of swLinks) link(jAt(x.x, x.y), jAt(y.x, y.y));
+  // riferimenti progressivi per le resistenze aggiunte
+  let rn = Math.max(0, ...circ.comps.filter(c => c.type === 'R' || c.type === 'POT').map(c => +(String(c.ref).match(/^R(\d+)$/) || [0, 0])[1]));
+  for (const q of parts) if (q.type === 'resistor' && /^R9\d\d+$/.test(q.ref) && !circ.comps.some(c => c.ref === q.ref)) { q.ref = 'R' + (++rn); bump(q.ref); }
+  const meta = circ.meta?.pedalspice || {};
+  for (const n of meta.notes || []) { const q = {...n, id:id++}; parts.push(q); bump(q.ref); }
+  const extra = meta.extra || {};
+  if (['blocks', 'chain', 'chainWires'].some(k => (extra[k] || []).length)) warnings.push('Il file originale conteneva blocchi o catene di PedalSpice: sono stati conservati, ma potrebbero riferirsi a componenti rinumerati.');
+  const supply = meta.supply || (neg ? 'pm' + fmtP(vmax) : String(fmtP(vmax)));
+  return {json:{app:'pedal-sim', version:3, name:$('#title').value, supply, adv:meta.adv ?? true, parts, wires, nextId:id, refCounters:counters,
+    blocks:extra.blocks || [], chain:extra.chain || [], chainWires:extra.chainWires || [], cutJoints:extra.cutJoints || [], cutTouches:extra.cutTouches || []}, warnings};
 }
 
 /* =========================================================================
